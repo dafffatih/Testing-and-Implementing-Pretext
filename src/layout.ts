@@ -26,7 +26,7 @@
 //   - system-ui font: canvas resolves to different optical variants than DOM on macOS.
 //     Use named fonts (Helvetica, Inter, etc.) for guaranteed accuracy.
 //
-// Based on Sebastian Markbage's text-layout research (github.com/reactjs/text-layout).
+// Based on Sebastian Markbage's text-layout research (github.com/chenglou/text-layout).
 
 const canvas = typeof OffscreenCanvas !== 'undefined'
   ? new OffscreenCanvas(1, 1)

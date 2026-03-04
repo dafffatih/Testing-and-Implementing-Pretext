@@ -96,7 +96,17 @@ However, over full paragraphs (20+ segments), the per-pair consistency doesn't g
 - **Trailing space exclusion**: exclude trailing space width from overflow check. Logically sound (CSS trailing spaces hang) but too disruptive — changed break decisions across the board (99.9% → 95%).
 - **Uniform scaling**: measure full text, compute ratio vs word-sum, scale all segment widths. Overcorrects some segments and undercorrects others since the divergence isn't uniformly distributed (99.9% → 99.7%).
 
+- **Character-level + pair kerning** (inspired by [uWrap](https://github.com/leeoniya/uWrap)): measure per-character with uppercase pair kerning LUT instead of per-word. Reduces per-step rounding error but loses the per-word shaping accuracy that Chrome's canvas provides. Chrome 99.9% → 99.7%. The error goes in opposite directions by browser — Chrome's word-level sum runs slightly wide, Safari's runs slightly narrow — so no single measurement granularity wins everywhere.
+
 The divergence is small and varies by character adjacency — it's not a constant bias. A per-line full-string measurement during layout would fix it but requires storing text strings (not just widths) and canvas calls during the hot path, which conflicts with the two-phase design. There may be a better approach we haven't found yet.
+
+## Prior art
+
+- **[uWrap](https://github.com/leeoniya/uWrap)** (Leon Sorokin) — <2KB, character-pair kerning LUT for virtual scroll height prediction. 10x faster than canvas-hypertxt. Latin-only (no CJK/bidi/emoji). Measures character pairs instead of words, which avoids cumulative word-sum error but misses per-word shaping.
+- **[canvas-hypertxt](https://github.com/glideapps/canvas-hypertxt)** (Glide) — trains a weighting model to estimate string widths without measureText after warmup. ~200K weekly npm downloads.
+- **[chenglou/text-layout](https://github.com/chenglou/text-layout)** — Sebastian Markbage's original prototype. Canvas measureText + bidi from pdf.js. No caching, no Intl.Segmenter. Our direct ancestor.
+- **[tex-linebreak](https://github.com/robertknight/tex-linebreak)** — Knuth-Plass optimal line breaking. Quality over speed, not for DOM height prediction.
+- **[linebreak](https://github.com/foliojs/linebreak)** (foliojs) — UAX #14 Unicode Line Breaking Algorithm. Used by PDFKit, Sebastian's original.
 
 ## Discovery: punctuation accumulation error
 

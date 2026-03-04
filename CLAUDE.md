@@ -49,4 +49,4 @@ Chrome 99.9%, Safari 98.8%, HarfBuzz 100%. See [README.md](README.md) for detail
 
 - `../text-layout/` — Sebastian Markbage's original prototype + our experimental variants.
 
-See [RESEARCH.md](RESEARCH.md) for full exploration log. Based on Sebastian Markbage's [text-layout](https://github.com/reactjs/text-layout).
+See [RESEARCH.md](RESEARCH.md) for full exploration log. Based on Sebastian Markbage's [text-layout](https://github.com/chenglou/text-layout).
