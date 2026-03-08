@@ -397,65 +397,17 @@ function computeBidiLevels(str: string): Int8Array | null {
   return levels
 }
 
-// --- Public types ---
-
-export type PreparedText = {
-  widths: number[] // Segment widths, e.g. [42.5, 4.4, 37.2]
-  isSpace: boolean[] // True when the matching segment is whitespace, e.g. [false, true, false]
-  segLevels: Int8Array | null // Bidi embedding level per segment, or null for pure LTR text
-  breakableWidths: (number[] | null)[] // Grapheme widths for overflow-wrap segments, else null
+type MergedSegmentation = {
+  len: number
+  texts: string[]
+  isWordLike: boolean[]
+  isSpace: boolean[]
+  starts: number[]
 }
 
-export type PreparedTextWithSegments = PreparedText & {
-  segments: string[] // Segment text aligned with the parallel arrays, e.g. ['hello', ' ', 'world']
-}
+type TextAnalysis = { normalized: string } & MergedSegmentation
 
-export type LayoutResult = {
-  lineCount: number // Number of wrapped lines, e.g. 3
-  height: number // Total block height, e.g. lineCount * lineHeight = 57
-}
-
-export type LayoutLine = {
-  text: string // Full text content of this line, e.g. 'hello world'
-  width: number // Measured width of this line, e.g. 87.5
-}
-
-export type LayoutLinesResult = LayoutResult & {
-  lines: LayoutLine[] // Per-line text/width pairs for custom rendering
-}
-
-// --- Public API ---
-
-function prepareInternal(text: string, font: string, includeSegments: boolean): PreparedText | PreparedTextWithSegments {
-  ctx.font = font
-  const cache = getWordCache(font)
-  const fontSize = parseFontSize(font)
-
-  const emojiCorrection = getEmojiCorrection(font, fontSize)
-
-  // CSS white-space: normal collapses runs of normal whitespace and strips
-  // leading/trailing collapsible whitespace.
-  const normalized = normalizeWhitespaceNormal(text)
-
-  if (normalized.length === 0) {
-    if (includeSegments) {
-      return { widths: [], isSpace: [], segLevels: null, breakableWidths: [], segments: [] }
-    }
-    return { widths: [], isSpace: [], segLevels: null, breakableWidths: [] }
-  }
-
-  // Output arrays — segments get pushed here after merging/splitting.
-  const widths: number[] = []
-  const isSpace: boolean[] = []
-  const segStarts: number[] = []
-  const breakableWidths: (number[] | null)[] = []
-  const segments = includeSegments ? [] as string[] : null
-
-  // Phase 1: merge left-sticky punctuation into the preceding non-space
-  // segment. Sentence punctuation should stay attached to the word on its
-  // left, but dash punctuation stays breakable.
-  // Iterate the segmenter directly — no intermediate array allocation.
-  // Parallel arrays instead of object allocations.
+function buildMergedSegmentation(normalized: string): MergedSegmentation {
   let mergedLen = 0
   const mergedTexts: string[] = []
   const mergedWordLike: boolean[] = []
@@ -486,31 +438,113 @@ function prepareInternal(text: string, font: string, includeSegments: boolean): 
     }
   }
 
-  // Forward-merge opening punctuation with the following segment so it doesn't
-  // get stranded at line end. E.g. "(" + "approximately" → "(approximately",
-  // "“" + "Whenever" → "“Whenever". Mark deleted entries with empty string
-  // instead of shifting (O(1) vs O(n)).
   for (let i = mergedLen - 2; i >= 0; i--) {
     if (!mergedSpace[i]! && !mergedWordLike[i]! && mergedTexts[i]!.length === 1 && kinsokuEnd.has(mergedTexts[i]!)) {
       mergedTexts[i + 1] = mergedTexts[i]! + mergedTexts[i + 1]!
       mergedStarts[i + 1] = mergedStarts[i]!
-      mergedTexts[i] = '' // mark deleted
+      mergedTexts[i] = ''
     }
   }
 
-  // Phase 2: expand CJK into graphemes, measure everything.
-  for (let mi = 0; mi < mergedLen; mi++) {
-    const segText = mergedTexts[mi]!
-    if (segText.length === 0) continue // skip deleted entries
+  return {
+    len: mergedLen,
+    texts: mergedTexts,
+    isWordLike: mergedWordLike,
+    isSpace: mergedSpace,
+    starts: mergedStarts,
+  }
+}
 
-    const segWordLike = mergedWordLike[mi]!
-    const segIsSpace = mergedSpace[mi]!
-    const segStart = mergedStarts[mi]!
+function computeSegmentLevels(normalized: string, segStarts: number[]): Int8Array | null {
+  const bidiLevels = computeBidiLevels(normalized)
+  if (bidiLevels === null) return null
+
+  const segLevels = new Int8Array(segStarts.length)
+  for (let i = 0; i < segStarts.length; i++) {
+    segLevels[i] = bidiLevels[segStarts[i]!]!
+  }
+  return segLevels
+}
+
+// prepare() is split into a pure text-analysis phase and a measurement phase.
+function analyzeText(text: string): TextAnalysis {
+  const normalized = normalizeWhitespaceNormal(text)
+  if (normalized.length === 0) {
+    return {
+      normalized,
+      len: 0,
+      texts: [],
+      isWordLike: [],
+      isSpace: [],
+      starts: [],
+    }
+  }
+  return { normalized, ...buildMergedSegmentation(normalized) }
+}
+
+// --- Public types ---
+
+export type PreparedText = {
+  widths: number[] // Segment widths, e.g. [42.5, 4.4, 37.2]
+  isSpace: boolean[] // True when the matching segment is whitespace, e.g. [false, true, false]
+  segLevels: Int8Array | null // Bidi embedding level per segment, or null for pure LTR text
+  breakableWidths: (number[] | null)[] // Grapheme widths for overflow-wrap segments, else null
+}
+
+export type PreparedTextWithSegments = PreparedText & {
+  segments: string[] // Segment text aligned with the parallel arrays, e.g. ['hello', ' ', 'world']
+}
+
+export type LayoutResult = {
+  lineCount: number // Number of wrapped lines, e.g. 3
+  height: number // Total block height, e.g. lineCount * lineHeight = 57
+}
+
+export type LayoutLine = {
+  text: string // Full text content of this line, e.g. 'hello world'
+  width: number // Measured width of this line, e.g. 87.5
+}
+
+export type LayoutLinesResult = LayoutResult & {
+  lines: LayoutLine[] // Per-line text/width pairs for custom rendering
+}
+
+// --- Public API ---
+
+function createEmptyPrepared(includeSegments: boolean): PreparedText | PreparedTextWithSegments {
+  if (includeSegments) {
+    return { widths: [], isSpace: [], segLevels: null, breakableWidths: [], segments: [] }
+  }
+  return { widths: [], isSpace: [], segLevels: null, breakableWidths: [] }
+}
+
+function measureAnalysis(
+  analysis: TextAnalysis,
+  font: string,
+  includeSegments: boolean,
+): PreparedText | PreparedTextWithSegments {
+  ctx.font = font
+  const cache = getWordCache(font)
+  const fontSize = parseFontSize(font)
+  const emojiCorrection = getEmojiCorrection(font, fontSize)
+
+  if (analysis.len === 0) return createEmptyPrepared(includeSegments)
+
+  const widths: number[] = []
+  const isSpace: boolean[] = []
+  const segStarts: number[] = []
+  const breakableWidths: (number[] | null)[] = []
+  const segments = includeSegments ? [] as string[] : null
+
+  for (let mi = 0; mi < analysis.len; mi++) {
+    const segText = analysis.texts[mi]!
+    if (segText.length === 0) continue
+
+    const segWordLike = analysis.isWordLike[mi]!
+    const segIsSpace = analysis.isSpace[mi]!
+    const segStart = analysis.starts[mi]!
 
     if (isCJK(segText)) {
-      // Split CJK into individual graphemes for per-character line breaks.
-      // Apply kinsoku shori in a single pass: collect graphemes into a temporary
-      // array (needed for lookahead on kinsokuEnd), then merge and push to output.
       let gLen = 0
       const gTexts: string[] = []
       const gStarts: number[] = []
@@ -520,7 +554,6 @@ function prepareInternal(text: string, font: string, includeSegments: boolean): 
         gLen++
       }
 
-      // Kinsoku merge + push to output in one pass
       for (let gi = 0; gi < gLen; gi++) {
         let unitText = gTexts[gi]!
         const unitStart = gStarts[gi]!
@@ -529,7 +562,6 @@ function prepareInternal(text: string, font: string, includeSegments: boolean): 
           unitText += gTexts[gi + 1]!
           gi++
         }
-        // Check if the NEXT grapheme is a kinsoku-start char — absorb it
         while (
           gi + 1 < gLen &&
           (kinsokuStart.has(gTexts[gi + 1]!) || leftStickyPunctuation.has(gTexts[gi + 1]!))
@@ -548,49 +580,50 @@ function prepareInternal(text: string, font: string, includeSegments: boolean): 
         breakableWidths.push(null)
         if (segments !== null) segments.push(unitText)
       }
-    } else {
-      let w = measureSegment(segText, cache)
-      if (emojiCorrection > 0 && emojiPresentationRe.test(segText)) {
-        w -= countEmojiGraphemes(segText) * emojiCorrection
-      }
-      widths.push(w)
-      isSpace.push(segIsSpace)
-      segStarts.push(segStart)
-      if (segWordLike && segText.length > 1) {
-        // Pre-measure graphemes for overflow-wrap: break-word.
-        let gCount = 0
-        let gWidths: number[] | null = null
-        for (const gs of sharedGraphemeSegmenter.segment(segText)) {
-          if (gCount === 0) gWidths = []
-          let gw = measureSegment(gs.segment, cache)
-          if (emojiCorrection > 0 && isEmojiGrapheme(gs.segment)) {
-            gw -= emojiCorrection
-          }
-          gWidths![gCount] = gw
-          gCount++
+      continue
+    }
+
+    let w = measureSegment(segText, cache)
+    if (emojiCorrection > 0 && emojiPresentationRe.test(segText)) {
+      w -= countEmojiGraphemes(segText) * emojiCorrection
+    }
+    widths.push(w)
+    isSpace.push(segIsSpace)
+    segStarts.push(segStart)
+
+    if (segWordLike && segText.length > 1) {
+      let gCount = 0
+      let gWidths: number[] | null = null
+      for (const gs of sharedGraphemeSegmenter.segment(segText)) {
+        if (gCount === 0) gWidths = []
+        let gw = measureSegment(gs.segment, cache)
+        if (emojiCorrection > 0 && isEmojiGrapheme(gs.segment)) {
+          gw -= emojiCorrection
         }
-        breakableWidths.push(gCount > 1 ? gWidths : null)
-      } else {
-        breakableWidths.push(null)
+        gWidths![gCount] = gw
+        gCount++
       }
-      if (segments !== null) segments.push(segText)
+      breakableWidths.push(gCount > 1 ? gWidths : null)
+    } else {
+      breakableWidths.push(null)
     }
+
+    if (segments !== null) segments.push(segText)
   }
 
-  const bidiLevels = computeBidiLevels(normalized)
-  let segLevels: Int8Array | null = null
-
-  if (bidiLevels !== null) {
-    segLevels = new Int8Array(widths.length)
-    for (let i = 0; i < widths.length; i++) {
-      segLevels[i] = bidiLevels[segStarts[i]!]!
-    }
-  }
-
+  const segLevels = computeSegmentLevels(analysis.normalized, segStarts)
   if (segments !== null) {
     return { widths, isSpace, segLevels, breakableWidths, segments }
   }
   return { widths, isSpace, segLevels, breakableWidths }
+}
+
+function prepareInternal(text: string, font: string, includeSegments: boolean): PreparedText | PreparedTextWithSegments {
+  const analysis = analyzeText(text)
+  if (analysis.len === 0) {
+    return createEmptyPrepared(includeSegments)
+  }
+  return measureAnalysis(analysis, font, includeSegments)
 }
 
 // Prepare text for layout. Segments the text, measures each segment via canvas,

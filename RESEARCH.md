@@ -212,6 +212,8 @@ None of these match browser canvas/DOM exactly — different font engines, diffe
 
 ## Safari CSS line-breaking differences
 
+Historical note: this section describes the mismatch classes we observed before the later diagnostics pass and line-breaking fixes. Those browser sweeps are now clean on fresh runs in Chrome, Safari, and Firefox.
+
 Safari's canvas and DOM agree on individual word widths (after trimming trailing spaces). But Safari's CSS engine breaks lines at different positions than our algorithm in three cases:
 
 **1. Emoji break opportunities**
@@ -243,21 +245,40 @@ Safari's CSS engine may treat bidi script boundaries as preferred break points. 
 - **Trailing space exclusion from line width**: tracked space width separately, only counted it when followed by non-space. No effect on Safari accuracy, hurt Chrome (99.4% → 99.0%). Reverted.
 - **Preventing punctuation merge into space segments**: stopped emoji/parens from merging with preceding space (which made them invisible to line breaking). Made Safari worse (48 → 56 mismatches). Reverted.
 
-**Conclusion**: Safari's mismatches are CSS line-breaking rule differences, not measurement errors. Fixing them requires implementing kinsoku rules, emoji-as-break-point handling, and bidi-aware break preferences — CSS spec work beyond measurement.
+**Conclusion at the time**: Safari's mismatches looked like CSS line-breaking rule differences rather than raw measurement errors. Later work closed the remaining browser sweep gaps with better punctuation/CJK modeling, browser-specific diagnostics, and a tiny engine-specific line-fit tolerance.
+
+## Final browser sweep closure
+
+The last few browser mismatches were not fixed by moving more work into `layout()`. That path regressed the hot path immediately and was reverted.
+
+What held up:
+- better preprocessing in `prepare()` / `prepareWithSegments()`: whitespace normalization, more selective punctuation merging, opening-quote forward merge, and CJK/Hangul punctuation handling
+- browser-specific diagnostics pages plus scripted checkers for Chrome, Safari, and Firefox
+- a very small browser-specific line-fit tolerance for borderline subpixel overflows (`0.002` for Chromium/Gecko, `1/64` for Safari/WebKit)
+
+What did **not** change:
+- `layout()` stayed arithmetic-only on cached widths
+- no hot-path `measureText()` verification was reintroduced
+- the browser-facing public API stayed `prepare()` / `layout()`
+
+The current verification loop:
+- `bun run accuracy-check`
+- `bun run accuracy-check:safari`
+- `bun run accuracy-check:firefox`
+- `bun run gatsby-check 300 400 600 800`
+
+These are the checks that now matter more than the older mismatch tables below.
 
 ## Accuracy summary
 
 Browser (canvas measureText, named fonts), 4 fonts × 8 sizes × 8 widths × 30 texts = 7680 tests:
-- Chrome: 7677/7680 (99.96%)
-  - Remaining: Georgia measurement rounding (2), Courier New Korean edge case (1)
-- Safari: 7674/7680 (99.92%)
-  - Remaining: Georgia rounding (2), bidi paren (1), Verdana/Courier New bidi (3)
-- Firefox: 7676/7680 (99.95%)
-  - Remaining: Thai dictionary divergence (3), Courier New Korean edge case (1)
+- Chrome: 7680/7680 (100%)
+- Safari: 7680/7680 (100%)
+- Firefox: 7680/7680 (100%)
 
 Headless (HarfBuzz, Arial Unicode):
 - 1920/1920 (100%) word-sum vs full-line measurement
-- Algorithm is exact; browser mismatches are measurement backend differences
+- Algorithm is exact under the headless HarfBuzz backend; the browser sweeps are now also clean on fresh runs.
 
 ## What Sebastian already knew
 

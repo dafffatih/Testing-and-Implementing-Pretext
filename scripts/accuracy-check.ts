@@ -106,10 +106,10 @@ async function startProxyServer(targetOrigin: string): Promise<{ baseUrl: string
       const targetUrl = new URL(req.url ?? '/', targetOrigin)
       const response = await fetch(targetUrl, { method: req.method ?? 'GET' })
       res.statusCode = response.status
-      for (const [key, value] of response.headers) {
-        if (key.toLowerCase() === 'transfer-encoding') continue
+      response.headers.forEach((value, key) => {
+        if (key.toLowerCase() === 'transfer-encoding') return
         res.setHeader(key, value)
-      }
+      })
       const body = response.body === null ? new Uint8Array(0) : new Uint8Array(await response.arrayBuffer())
       res.end(body)
     } catch (error) {

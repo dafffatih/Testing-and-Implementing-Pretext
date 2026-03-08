@@ -20,7 +20,7 @@ const block = prepare(commentText, '16px Inter')
 const { height, lineCount } = layout(block, containerWidth, 19)
 ```
 
-`prepare()` segments text via `Intl.Segmenter`, measures each word via canvas, and caches the widths. On browsers that need emoji correction, it also does one cached DOM calibration read per font. `layout()` walks the cached widths to count lines and multiplies by the caller-provided `lineHeight` — no canvas, no DOM, no string operations. Each `layout()` call is ~0.0002ms.
+`prepare()` does a one-time text analysis pass (whitespace normalization, segmentation, punctuation/CJK fixes), then measures the resulting segments via canvas and caches the widths. On browsers that need emoji correction, it also does one cached DOM calibration read per font. `layout()` walks the cached widths to count lines and multiplies by the caller-provided `lineHeight` — no canvas, no DOM, no string operations. Each `layout()` call is ~0.0002ms.
 
 ## Practical uses
 
@@ -51,12 +51,12 @@ Tested across 4 fonts × 8 sizes × 8 widths × 30 i18n texts (7680 tests):
 
 | Browser | Match rate | Tests | Remaining mismatches |
 |---|---|---|---|
-| Chrome | 99.96% | 7680 | Georgia rounding (2), Courier New Korean (1) |
-| Safari | 99.92% | 7680 | Georgia rounding (2), bidi paren (1), Verdana/Courier New bidi (3) |
-| Firefox | 99.95% | 7680 | Thai dictionary (3), Courier New Korean (1) |
+| Chrome | 100.00% | 7680 | None on the current browser sweep |
+| Safari | 100.00% | 7680 | None on the current browser sweep |
+| Firefox | 100.00% | 7680 | None on the current browser sweep |
 | Headless (HarfBuzz) | 100% | 1920 | Algorithm is exact |
 
-Tested across 4 fonts (Helvetica Neue, Georgia, Verdana, Courier New) × 8 sizes × 8 widths × 30 i18n texts. Remaining mismatches are font-specific measurement edge cases at borderline widths and browser-internal dictionary differences (Thai). Safari's mismatches are CSS line-breaking behavior differences (not measurement errors). See [RESEARCH.md](RESEARCH.md) for details.
+Tested across 4 fonts (Helvetica Neue, Georgia, Verdana, Courier New) × 8 sizes × 8 widths × 30 i18n texts. The browser sweep is now clean on fresh runs in Chrome, Safari, and Firefox. See [RESEARCH.md](RESEARCH.md) for the exploration log and the remaining Gatsby canary edge cases.
 
 ## i18n
 
@@ -74,13 +74,12 @@ Tested across 4 fonts (Helvetica Neue, Georgia, Verdana, Courier New) × 8 sizes
 
 ## How it works
 
-1. **Segmentation**: `Intl.Segmenter('word')` splits text into words and non-words (spaces, punctuation).
-2. **Punctuation merging**: `"better."` is measured as one unit, not `"better"` + `"."`. This reduces accumulation error from summing individual measurements (up to 2.6px at 28px font without merging).
-3. **CJK splitting + kinsoku**: CJK word segments are re-split into individual graphemes, since CSS allows line breaks between any CJK characters. Kinsoku shori rules keep CJK punctuation (，。「」 etc.) attached to their adjacent characters so they can't be separated across line breaks.
-4. **Measurement + caching**: each segment is measured via canvas `measureText()` and cached in a `Map<font, Map<segment, width>>`. Common words across texts share cache entries. The cache has no eviction — it grows monotonically per font string. For a typical single-font comment feed this is a few KB; `clearCache()` exists for manual eviction if needed.
-5. **Emoji correction**: canvas `measureText` inflates emoji widths on Chrome/Firefox at font sizes <24px on macOS. Auto-detected by measuring a reference emoji; correction subtracted per emoji grapheme. Constant across all emoji types and font families. Safari is unaffected (correction = 0).
-6. **Bidi classification**: characters are classified into bidi types and embedding levels are computed. Pure LTR text skips this entirely.
-7. **Layout** (per resize): walk the cached widths, accumulate per line, break when exceeding `maxWidth`. Trailing whitespace hangs past the edge (CSS behavior). Non-space overflow (words, emoji, punctuation) triggers a line break. Segments wider than `maxWidth` are broken at grapheme boundaries.
+1. **Text analysis**: normalize collapsible whitespace, segment with `Intl.Segmenter('word')`, merge punctuation, and carry opening punctuation forward so browser break opportunities are modeled more closely.
+2. **CJK splitting + kinsoku**: CJK word segments are re-split into individual graphemes, since CSS allows line breaks between any CJK characters. Kinsoku shori rules keep CJK punctuation (，。「」 etc.) attached to their adjacent characters so they can't be separated across line breaks.
+3. **Measurement + caching**: each final segment is measured via canvas `measureText()` and cached in a `Map<font, Map<segment, width>>`. Common words across texts share cache entries. The cache has no eviction — it grows monotonically per font string. For a typical single-font comment feed this is a few KB; `clearCache()` exists for manual eviction if needed.
+4. **Emoji correction**: canvas `measureText` inflates emoji widths on Chrome/Firefox at font sizes <24px on macOS. Auto-detected by measuring a reference emoji; correction subtracted per emoji grapheme. Safari is unaffected (correction = 0).
+5. **Bidi classification**: characters are classified into bidi types and embedding levels are computed. Pure LTR text skips this entirely.
+6. **Layout** (per resize): walk the cached widths, accumulate per line, break when exceeding `maxWidth`. Trailing whitespace hangs past the edge (CSS behavior). Non-space overflow (words, emoji, punctuation) triggers a line break. Segments wider than `maxWidth` are broken at grapheme boundaries.
 
 ## Research
 
@@ -97,6 +96,9 @@ bun install
 bun start        # http://localhost:3000 — demo pages
 bun run check    # typecheck + lint
 bun test         # headless accuracy tests (HarfBuzz)
+bun run accuracy-check         # Chrome browser sweep
+bun run accuracy-check:safari  # Safari browser sweep
+bun run accuracy-check:firefox # Firefox browser sweep
 ```
 
 Pages:
