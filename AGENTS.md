@@ -6,6 +6,7 @@ Internal notes for contributors and agents. Use `README.md` as the public source
 
 - `bun start` — serve pages at http://localhost:3000 without watch-mode reload (kills stale `:3000` listeners first)
 - `bun run start:watch` — same page server, but with Bun's watch/reload client when you explicitly want it
+- `bun run site:build` — build the static demo site into `site/` for GitHub Pages
 - `bun run check` — typecheck + lint
 - `bun test` — lightweight invariant tests against the shipped implementation
 - `bun run accuracy-check` / `:safari` / `:firefox` — browser accuracy sweeps
@@ -37,6 +38,7 @@ Internal notes for contributors and agents. Use `README.md` as the public source
 - `benchmarks/chrome.json` / `benchmarks/safari.json` — checked-in current benchmark snapshots backing `STATUS.md`
 - `corpora/representative.json` — checked-in representative corpus anchor rows backing `corpora/STATUS.md`
 - `pages/diagnostic-utils.ts` — shared grapheme-safe diagnostic helpers used by the browser check pages
+- `pages/demos/index.html` — public static demo landing page used as the GitHub Pages site root
 - `pages/demos/bubbles.ts` — bubble shrinkwrap demo using the rich non-materializing line-range walker
 - `pages/demos/dynamic-layout.ts` — fixed-height editorial spread with a continuous two-column flow, obstacle-aware title routing, and live logo-driven reflow
 

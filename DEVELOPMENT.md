@@ -4,6 +4,7 @@
 bun install
 bun start        # http://localhost:3000 — stable demo pages (clears stale :3000 listeners first)
 bun run start:watch # same page server, but with Bun watch/reload enabled
+bun run site:build # static demo site -> site/
 bun run check    # typecheck + lint
 bun test         # lightweight invariants against the shipped implementation
 bun run accuracy-check         # Chrome browser sweep
@@ -18,6 +19,8 @@ bun run corpus-font-matrix --id=ar-risalat-al-ghufran-part-1 --samples=5  # samp
 ```
 
 Pages:
+- `/demos/index` — demo index page
+- `/demos/accordion` — expand/collapse sections with Pretext-driven heights
 - `/demos/dynamic-layout` — fixed-height editorial spread with two-column flow, obstacle avoidance, live logo-driven reflow
 - `/demos/bubbles` — bubble shrinkwrap demo
 - `/accuracy` — sweep across fonts, sizes, widths, i18n texts

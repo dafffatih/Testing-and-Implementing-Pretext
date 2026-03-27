@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- GitHub Pages demo-site build and deployment workflow.
+
 ## 0.0.1 - 2026-03-27
 
 ### Changed
