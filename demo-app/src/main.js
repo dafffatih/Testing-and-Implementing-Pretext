@@ -1,5 +1,5 @@
 import { prepareWithSegments, layoutNextLine } from '@chenglou/pretext';
-import { Circle, Square, Rectangle, Triangle, Pentagon, Hexagon, Star } from './shapes.js';
+import { Shape, Circle, Square, Rectangle, Triangle, Pentagon, Hexagon, Star } from './shapes.js';
 
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
@@ -7,142 +7,205 @@ const container = document.querySelector('.canvas-container');
 
 let width, height;
 let prepared;
-const summaryText = "Pretext adalah pustaka JavaScript dan TypeScript murni yang dirancang khusus untuk pengukuran dan tata letak teks multibaris dengan performa tinggi, akurasi tinggi, serta dukungan luas untuk berbagai bahasa yang bahkan jarang diketahui, di mana pustaka ini bekerja dengan menghindari kebutuhan akan pengukuran DOM tradisional seperti getBoundingClientRect atau offsetHeight yang biasanya memicu layout reflow yang lambat dan berat bagi peramban. Dengan mengimplementasikan logika pengukuran teksnya sendiri dan menggunakan mesin font peramban melalui elemen kanvas sebagai sumber kebenaran data, Pretext memungkinkan pengembang untuk menghitung tinggi paragraf atau menyusun baris teks secara manual untuk di-render ke DOM, Canvas, SVG, maupun sisi server di masa depan tanpa harus menyentuh DOM secara langsung, sehingga membuka peluang baru dalam pembuatan antarmuka web modern seperti virtualisasi daftar yang presisi tanpa perkiraan kasar, tata letak masonry yang fleksibel, implementasi flexbox kustom berbasis JavaScript, serta pencegahan pergeseran tata letak saat konten baru dimuat dengan cara menghitung geometri teks sebelum teks tersebut benar-benar ditampilkan di layar. ";
-const longText = summaryText.repeat(15);
+const summaryText = "Pretext is a pure JavaScript/TypeScript library designed for high-performance, accurate multiline text measurement and layout, supporting a vast range of languages including those you might not even know about. It works by bypassing traditional DOM-based measurements like getBoundingClientRect or offsetHeight, which trigger expensive and slow layout reflows in the browser. By implementing its own text measurement logic using the browser's canvas-based font engine as its ground truth, Pretext allows developers to calculate paragraph heights or lay out individual text lines manually for rendering to the DOM, Canvas, SVG, or even server-side in the future without directly touching the DOM, enabling new possibilities for modern web UIs such as precise virtualization without guesstimates, flexible masonry layouts, custom JavaScript-driven flexbox implementations, and the prevention of layout shifts by calculating text geometry before it is even rendered on the screen. ";
+const longText = summaryText.repeat(40); // Increased repetition for fullscreen
 
 const FONT_SIZE = 16;
 const FONT_FAMILY = 'Inter, sans-serif';
 const LINE_HEIGHT = 26;
-const MARGIN = 20;
+const MARGIN = 15;
+
+const REF_WIDTH = 1024;
+const REF_HEIGHT = 768;
+const MIN_SCALE = 0.4;
+
+const SHAPE_CONFIGS = [
+  { type: 'Circle', x: 250, y: 200, size: 80, color: '#ff5c5c' },
+  { type: 'Square', x: 550, y: 150, size: 120, color: '#5c80ff' },
+  { type: 'Rectangle', x: 300, y: 480, w: 170, h: 100, color: '#5cff8e' },
+  { type: 'Triangle', x: 750, y: 250, size: 90, color: '#ffd85c' },
+  { type: 'Pentagon', x: 850, y: 550, size: 85, color: '#b95cff' },
+  { type: 'Hexagon', x: 150, y: 650, size: 100, color: '#ff5cd8' },
+  { type: 'Star', x: 600, y: 600, size: 110, color: '#ff995c' }
+];
 
 const shapes = [];
 
-function init() {
-  window.addEventListener('resize', resize);
+function initShapes() {
+  const currentWidth = window.innerWidth;
+  const currentHeight = window.innerHeight;
   
-  // Create preset shapes
-  shapes.push(new Circle(250, 200, 80, '#ff5c5c')); // red circle
-  shapes.push(new Square(450, 150, 100, '#5c80ff')); // blue square
-  shapes.push(new Rectangle(300, 450, 140, 70, '#5cff8e')); // green rect
-  shapes.push(new Triangle(600, 300, 80, '#ffd85c')); // yellow triangle
-  shapes.push(new Pentagon(800, 150, 75, '#b95cff')); // purple pentagon
-  shapes.push(new Hexagon(150, 600, 90, '#ff5cd8')); // pink hexagon
-  shapes.push(new Star(750, 500, 100, '#ff995c')); // orange star
+  // Hitung skala berdasarkan lebar, tinggi, dan luas layar
+  const scaleW = currentWidth / REF_WIDTH;
+  const scaleH = currentHeight / REF_HEIGHT;
+  const scaleArea = Math.sqrt((currentWidth * currentHeight) / (REF_WIDTH * REF_HEIGHT));
+  
+  // Ambil nilai terkecil agar bentuk muat di layar sempit/pendek
+  let scale = Math.min(scaleW, scaleH, scaleArea, 1.0);
+  
+  // Batas pengaman agar tidak terlalu kecil di mobile
+  if (scale < MIN_SCALE) scale = MIN_SCALE;
+
+  shapes.length = 0; // Kosongkan array saat ini
+
+  SHAPE_CONFIGS.forEach(conf => {
+    let s;
+    const nx = conf.x * scaleW; // Posisi menyesuaikan lebar
+    const ny = conf.y * scaleH; // Posisi menyesuaikan tinggi
+    
+    if (conf.type === 'Circle') s = new Circle(nx, ny, conf.size * scale, conf.color);
+    else if (conf.type === 'Square') s = new Square(nx, ny, conf.size * scale, conf.color);
+    else if (conf.type === 'Rectangle') s = new Rectangle(nx, ny, conf.w * scale, conf.h * scale, conf.color);
+    else if (conf.type === 'Triangle') s = new Triangle(nx, ny, conf.size * scale, conf.color);
+    else if (conf.type === 'Pentagon') s = new Pentagon(nx, ny, conf.size * scale, conf.color);
+    else if (conf.type === 'Hexagon') s = new Hexagon(nx, ny, conf.size * scale, conf.color);
+    else if (conf.type === 'Star') s = new Star(nx, ny, conf.size * scale, conf.color);
+    
+    if (s) shapes.push(s);
+  });
+}
+
+function init() {
+  window.addEventListener('resize', () => {
+    resize();
+    // Hanya re-init shapes jika layar berubah ukuran besar (opsional)
+    // Untuk demo ini, kita re-init agar terlihat responsif
+    initShapes();
+  });
+  
+  resize();
+  initShapes();
   
   prepared = prepareWithSegments(longText, `${FONT_SIZE}px ${FONT_FAMILY}`);
   
   setupInteraction();
-  resize(); // triggers render
+  
+  // Continuous animation loop
+  animate();
 }
 
 function resize() {
-  const rect = container.getBoundingClientRect();
-  width = rect.width;
-  height = rect.height;
+  width = window.innerWidth;
+  height = window.innerHeight;
   
-  // Handling high DPI displays
   const dpr = window.devicePixelRatio || 1;
   canvas.width = width * dpr;
   canvas.height = height * dpr;
-  
-  // Scale context to match DPI
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  
-  requestAnimationFrame(render);
 }
 
-// Drag functionality
+// Drag functionality with velocity tracking
 let draggedShape = null;
 let offsetX = 0;
 let offsetY = 0;
+let lastX = 0;
+let lastY = 0;
 
 function setupInteraction() {
-  canvas.addEventListener('mousedown', e => {
+  const handleStart = (clientX, clientY) => {
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
     
-    // Check backwards to grab top-most shape
     for (let i = shapes.length - 1; i >= 0; i--) {
       if (shapes[i].isPointInside(x, y)) {
         draggedShape = shapes[i];
-        if (draggedShape.setPos) { // Polygon
-           offsetX = draggedShape.x - x;
-           offsetY = draggedShape.y - y;
-        } else {
-           offsetX = draggedShape.x - x;
-           offsetY = draggedShape.y - y;
-        }
+        draggedShape.isDragging = true;
+        draggedShape.vx = 0;
+        draggedShape.vy = 0;
+        offsetX = draggedShape.x - x;
+        offsetY = draggedShape.y - y;
+        lastX = x;
+        lastY = y;
         canvas.style.cursor = 'grabbing';
-        break;
+        return true;
       }
     }
-  });
+    return false;
+  };
 
-  window.addEventListener('mousemove', e => {
+  const handleMove = (clientX, clientY) => {
     if (!draggedShape) return;
     const rect = canvas.getBoundingClientRect();
-    let x = e.clientX - rect.left;
-    let y = e.clientY - rect.top;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
     
-    if (draggedShape.setPos) {
-       draggedShape.setPos(x + offsetX, y + offsetY);
-    } else {
-       draggedShape.x = x + offsetX;
-       draggedShape.y = y + offsetY;
-    }
+    draggedShape.vx = x - lastX;
+    draggedShape.vy = y - lastY;
+    draggedShape.x = x + offsetX;
+    draggedShape.y = y + offsetY;
     
-    // trigger render
-    requestAnimationFrame(render);
-  });
+    lastX = x;
+    lastY = y;
+  };
 
-  window.addEventListener('mouseup', () => {
-    draggedShape = null;
+  const handleEnd = () => {
+    if (draggedShape) {
+      draggedShape.isDragging = false;
+      draggedShape = null;
+    }
     canvas.style.cursor = 'default';
-  });
-  
-  // Touch support for mobile (optional)
+  };
+
+  // Mouse Events
+  canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY));
+  window.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', handleEnd);
+
+  // Touch Events (Mobile)
   canvas.addEventListener('touchstart', e => {
     if (e.touches.length > 0) {
-      e.clientX = e.touches[0].clientX;
-      e.clientY = e.touches[0].clientY;
-      const mousedownEvent = new MouseEvent('mousedown', e);
-      canvas.dispatchEvent(mousedownEvent);
+      if (handleStart(e.touches[0].clientX, e.touches[0].clientY)) {
+        e.preventDefault(); // Stop scrolling if we grab a shape
+      }
     }
-  }, {passive:true});
-  
-  canvas.addEventListener('touchmove', e => {
+  }, { passive: false });
+
+  window.addEventListener('touchmove', e => {
     if (draggedShape && e.touches.length > 0) {
-      e.preventDefault(); // prevent scrolling
-      const mousemoveEvent = new MouseEvent('mousemove', {
-        clientX: e.touches[0].clientX,
-        clientY: e.touches[0].clientY
-      });
-      window.dispatchEvent(mousemoveEvent);
+      handleMove(e.touches[0].clientX, e.touches[0].clientY);
+      e.preventDefault(); // Prevent scroll while dragging
     }
-  }, {passive:false});
-  
-  window.addEventListener('touchend', () => {
-    window.dispatchEvent(new MouseEvent('mouseup'));
-  });
+  }, { passive: false });
+
+  window.addEventListener('touchend', handleEnd);
+}
+
+function animate() {
+  updatePhysics();
+  render();
+  requestAnimationFrame(animate);
+}
+
+function updatePhysics() {
+  // 1. Update positions & Wall collisions
+  for (let shape of shapes) {
+    shape.update(width, height);
+  }
+
+  // 2. Resolve shape-to-shape collisions
+  for (let i = 0; i < shapes.length; i++) {
+    for (let j = i + 1; j < shapes.length; j++) {
+      Shape.resolveCollision(shapes[i], shapes[j]);
+    }
+  }
 }
 
 function getAvailableIntervals(y, h, totalWidth) {
-  // 1. Collect blocked intervals for this horizontal slice
   let blocked = shapes.map(s => s.getBlockedInterval(y, h)).filter(x => x !== null);
   
-  // 2. Add canvas boundaries margins
   blocked.push([-Infinity, MARGIN]);
   blocked.push([totalWidth - MARGIN, Infinity]);
   
-  // 3. Merge overlapping intervals
   blocked.sort((a, b) => a[0] - b[0]);
   const merged = [];
   if (blocked.length > 0) {
     let current = blocked[0];
     for (let i = 1; i < blocked.length; i++) {
         if (blocked[i][0] <= current[1]) {
-            current[1] = Math.max(current[1], Math.max(current[1], blocked[i][1]));
+            current[1] = Math.max(current[1], blocked[i][1]);
         } else {
             merged.push([...current]);
             current = blocked[i];
@@ -151,7 +214,6 @@ function getAvailableIntervals(y, h, totalWidth) {
     merged.push([...current]);
   }
   
-  // 4. Invert blocked intervals to find available gaps
   const available = [];
   let currentX = 0;
   for (let interval of merged) {
@@ -171,7 +233,6 @@ function render() {
   if (!width || !height || !prepared) return;
   
   ctx.clearRect(0, 0, width, height);
-
   ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`;
   ctx.fillStyle = '#e6edf3';
   ctx.textBaseline = 'top';
@@ -179,38 +240,56 @@ function render() {
   let cursor = { segmentIndex: 0, graphemeIndex: 0 };
   let y = MARGIN;
 
-  // Render loop using layoutNextLine for each unblocked segment on a row
   let breakLoop = false;
   while (y < height - MARGIN && !breakLoop) {
     let intervals = getAvailableIntervals(y, LINE_HEIGHT, width);
     
     for (let [start, end] of intervals) {
       let intervalWidth = end - start;
-      if (intervalWidth < 40) continue; // skip narrow gaps
+      if (intervalWidth < 40) continue; 
       
-      const line = layoutNextLine(prepared, cursor, intervalWidth);
+      const standardSpaceWidth = ctx.measureText(' ').width;
+      // Beri sedikit 'napas' (padding) agar Pretext tidak memaksakan terlalu banyak kata dalam satu baris
+      const targetWidth = intervalWidth - 5; 
+      
+      const line = layoutNextLine(prepared, cursor, targetWidth);
       if (!line) {
           breakLoop = true;
           break;
       }
       
-      ctx.fillText(line.text, start, y);
-      cursor = line.end;
+      const isLastOverallLine = line.end.segmentIndex >= prepared.segments.length;
+      const words = line.text.trim().split(/\s+/);
       
-      // If we've processed all segments, break early
-      // Depending on pretext version, line exhaustion can be checked by whether line text was empty, 
-      // but usually layoutNextLine returns null when done. 
-      // We also verify segment boundaries if exposed.
+      if (isLastOverallLine || words.length <= 1) {
+          ctx.fillText(line.text, start, y);
+      } else {
+          let totalWordWidth = 0;
+          const wordWidths = words.map(w => {
+              const ww = ctx.measureText(w).width;
+              totalWordWidth += ww;
+              return ww;
+          });
+          
+          // Hitung gapWidth, pastikan tidak lebih kecil dari spasi standar
+          let gapWidth = (intervalWidth - totalWordWidth) / (words.length - 1);
+          if (gapWidth < standardSpaceWidth) gapWidth = standardSpaceWidth;
+
+          let currentX = start;
+          for (let i = 0; i < words.length; i++) {
+              ctx.fillText(words[i], currentX, y);
+              currentX += wordWidths[i] + gapWidth;
+          }
+      }
+      
+      cursor = line.end;
     }
-    
     y += LINE_HEIGHT;
   }
   
-  // Draw shapes
   for (let shape of shapes) {
       shape.draw(ctx);
   }
 }
 
-// Start
 document.addEventListener('DOMContentLoaded', init);
